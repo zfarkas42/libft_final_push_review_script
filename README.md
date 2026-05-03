@@ -8,7 +8,7 @@ A **Bash script** to automatically verify the compliance of a **42 Libft project
 
 - **Repository Cloning**: Clones the provided Git repository for analysis.
 - **File Existence Checks**: Verifies the presence of `Makefile`, `libft.h`, and other required files.
-- **Makefile Validation**: Ensures the `Makefile` contains all required rules (`all`, `clean`, `fclean`, `re`, `$(NAME)`) and optional rules like `bonus`.
+- **Makefile Validation**: Ensures the `Makefile` contains all required rules (`all`, `clean`, `fclean`, `re`, `$(NAME)`) and optional rules like `bonus` (NOT 100% RELIABLE YET).
 - **Forbidden Source Files**: Checks for disallowed source files (e.g., `.c` files not listed in the subject).
 - **Forbidden Functions**: Detects the use of restricted functions (e.g., `printf`, `malloc`, `free`) in unauthorized files.
 - **Norm Compliance**: Validates adherence to the **42 Norm** (e.g., line length, function count, and parameter limits).
