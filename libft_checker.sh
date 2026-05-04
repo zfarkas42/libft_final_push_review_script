@@ -24,6 +24,20 @@ header(){ echo -e "\n${BOLD}${CYAN}═══════════════
           echo -e "${BOLD}${CYAN}  $*${RESET}"; \
           echo -e "${BOLD}${CYAN}══════════════════════════════════════════${RESET}"; }
 
+# progress_bar <current> <total> [label]
+progress_bar() {
+    local cur="$1" total="$2" label="${3:-}"
+    local width=38
+    local filled=$(( cur * width / total ))
+    local empty=$(( width - filled ))
+    local bar=""
+    local i
+    for (( i=0; i<filled; i++ )); do bar+="█"; done
+    for (( i=0; i<empty;  i++ )); do bar+="░"; done
+    local pct=$(( cur * 100 / total ))
+    printf "\r  ${CYAN}[%s]${RESET} %3d%% (%d/%d) %s" "$bar" "$pct" "$cur" "$total" "$label"
+}
+
 ERRORS=0
 WARNINGS=0
 
@@ -185,26 +199,37 @@ PART3=(
 
 check_function_files() {
     local part_label="$1"
-    shift
+    local is_bonus_part="$2"
+    shift 2
     local funcs=("$@")
     echo -e "\n  ${BOLD}$part_label${RESET}"
     for fn in "${funcs[@]}"; do
-        if [ -f "$REPO/${fn}.c" ]; then
-            pass "${fn}.c"
-        else
-            # Maybe it's a bonus file
+        if [ "$is_bonus_part" = "yes" ]; then
+            # Part 3: files must be named *_bonus.c per the subject
             if [ -f "$REPO/${fn}_bonus.c" ]; then
-                warn "${fn}.c missing, but ${fn}_bonus.c exists (only counts for bonus)"
+                pass "${fn}_bonus.c"
+            elif [ -f "$REPO/${fn}.c" ]; then
+                warn "${fn}_bonus.c missing, but ${fn}.c exists (subject requires _bonus suffix for Part 3)"
             else
-                fail "${fn}.c is MISSING"
+                fail "${fn}_bonus.c is MISSING"
+            fi
+        else
+            if [ -f "$REPO/${fn}.c" ]; then
+                pass "${fn}.c"
+            else
+                if [ -f "$REPO/${fn}_bonus.c" ]; then
+                    warn "${fn}.c missing, but ${fn}_bonus.c exists (only counts for bonus)"
+                else
+                    fail "${fn}.c is MISSING"
+                fi
             fi
         fi
     done
 }
 
-check_function_files "Part 1 — Libc functions" "${PART1[@]}"
-check_function_files "Part 2 — Additional functions" "${PART2[@]}"
-check_function_files "Part 3 — Linked list" "${PART3[@]}"
+check_function_files "Part 1 — Libc functions"        "no"  "${PART1[@]}"
+check_function_files "Part 2 — Additional functions"   "no"  "${PART2[@]}"
+check_function_files "Part 3 — Linked list (bonus)"    "yes" "${PART3[@]}"
 
 # ──────────────────────────────────────────────
 #  SECTION 5 — Forbidden functions inside .c files
@@ -369,7 +394,7 @@ if [ -f "$MAKEFILE" ]; then
 
     # Flags
     for flag in '-Wall' '-Wextra' '-Werror'; do
-        if grep -q "$flag" "$MAKEFILE"; then
+        if grep -qF -- "$flag" "$MAKEFILE"; then
             pass "Compiler flag '$flag' present"
         else
             fail "Compiler flag '$flag' MISSING"
@@ -534,90 +559,140 @@ normalise() {
         | sed 's/ $//'
 }
 
-check_sig() {
+# Accumulate signature results so we can show a progress bar while scanning,
+# then print detailed results afterwards.
+SIG_RESULTS=()   # each entry: "STATUS|fn|expected|got_norm"
+
+queue_sig() {
     local fn="$1"
     local expected="$2"
     local src="$REPO/${fn}.c"
 
+    # Fall back to _bonus variant (Part 3 linked-list functions)
+    if [ ! -f "$src" ] && [ -f "$REPO/${fn}_bonus.c" ]; then
+        src="$REPO/${fn}_bonus.c"
+    fi
+
     local got
     got=$(get_definition "$src" "$fn")
 
-    if [ "$got" = "FILE_NOT_FOUND" ]; then
-        warn "$fn — file not found, skipping signature check"
-        return
-    fi
-    if [ "$got" = "NOT_FOUND" ]; then
-        fail "$fn — function definition not found in ${fn}.c"
-        return
-    fi
-
     local norm_got norm_exp
-    norm_got=$(normalise "$got")
     norm_exp=$(normalise "$expected")
 
-    if [ "$norm_got" = "$norm_exp" ]; then
-        pass "$fn — signature OK"
+    if [ "$got" = "FILE_NOT_FOUND" ]; then
+        SIG_RESULTS+=("WARN|$fn|$norm_exp|FILE_NOT_FOUND")
+    elif [ "$got" = "NOT_FOUND" ]; then
+        SIG_RESULTS+=("FAIL|$fn|$norm_exp|NOT_FOUND")
     else
-        fail "$fn — signature MISMATCH"
-        echo -e "      ${YELLOW}Expected:${RESET} $norm_exp"
-        echo -e "      ${RED}Got     :${RESET} $norm_got"
+        norm_got=$(normalise "$got")
+        if [ "$norm_got" = "$norm_exp" ]; then
+            SIG_RESULTS+=("PASS|$fn|$norm_exp|$norm_got")
+        else
+            SIG_RESULTS+=("FAIL|$fn|$norm_exp|$norm_got")
+        fi
     fi
 }
 
-# ── Part 1: Libc prototypes (from the man pages; 'restrict' qualifier forbidden) ──
-echo -e "\n  ${BOLD}Part 1 — Libc functions${RESET}"
+# Build the full list of (fn, expected) pairs
+declare -a SIG_FNS SIG_EXP
 
-check_sig ft_isalpha   "int ft_isalpha(int c)"
-check_sig ft_isdigit   "int ft_isdigit(int c)"
-check_sig ft_isalnum   "int ft_isalnum(int c)"
-check_sig ft_isascii   "int ft_isascii(int c)"
-check_sig ft_isprint   "int ft_isprint(int c)"
-check_sig ft_strlen    "size_t ft_strlen(const char *s)"
-check_sig ft_memset    "void *ft_memset(void *s, int c, size_t n)"
-check_sig ft_bzero     "void ft_bzero(void *s, size_t n)"
-check_sig ft_memcpy    "void *ft_memcpy(void *dest, const void *src, size_t n)"
-check_sig ft_memmove   "void *ft_memmove(void *dest, const void *src, size_t n)"
-check_sig ft_strlcpy   "size_t ft_strlcpy(char *dst, const char *src, size_t size)"
-check_sig ft_strlcat   "size_t ft_strlcat(char *dst, const char *src, size_t size)"
-check_sig ft_toupper   "int ft_toupper(int c)"
-check_sig ft_tolower   "int ft_tolower(int c)"
-check_sig ft_strchr    "char *ft_strchr(const char *s, int c)"
-check_sig ft_strrchr   "char *ft_strrchr(const char *s, int c)"
-check_sig ft_strncmp   "int ft_strncmp(const char *s1, const char *s2, size_t n)"
-check_sig ft_memchr    "void *ft_memchr(const void *s, int c, size_t n)"
-check_sig ft_memcmp    "int ft_memcmp(const void *s1, const void *s2, size_t n)"
-check_sig ft_strnstr   "char *ft_strnstr(const char *haystack, const char *needle, size_t len)"
-check_sig ft_atoi      "int ft_atoi(const char *nptr)"
-check_sig ft_calloc    "void *ft_calloc(size_t nmemb, size_t size)"
-check_sig ft_strdup    "char *ft_strdup(const char *s)"
+SIG_FNS+=(ft_isalpha);    SIG_EXP+=("int ft_isalpha(int c)")
+SIG_FNS+=(ft_isdigit);    SIG_EXP+=("int ft_isdigit(int c)")
+SIG_FNS+=(ft_isalnum);    SIG_EXP+=("int ft_isalnum(int c)")
+SIG_FNS+=(ft_isascii);    SIG_EXP+=("int ft_isascii(int c)")
+SIG_FNS+=(ft_isprint);    SIG_EXP+=("int ft_isprint(int c)")
+SIG_FNS+=(ft_strlen);     SIG_EXP+=("size_t ft_strlen(const char *s)")
+SIG_FNS+=(ft_memset);     SIG_EXP+=("void *ft_memset(void *s, int c, size_t n)")
+SIG_FNS+=(ft_bzero);      SIG_EXP+=("void ft_bzero(void *s, size_t n)")
+SIG_FNS+=(ft_memcpy);     SIG_EXP+=("void *ft_memcpy(void *dest, const void *src, size_t n)")
+SIG_FNS+=(ft_memmove);    SIG_EXP+=("void *ft_memmove(void *dest, const void *src, size_t n)")
+SIG_FNS+=(ft_strlcpy);    SIG_EXP+=("size_t ft_strlcpy(char *dst, const char *src, size_t size)")
+SIG_FNS+=(ft_strlcat);    SIG_EXP+=("size_t ft_strlcat(char *dst, const char *src, size_t size)")
+SIG_FNS+=(ft_toupper);    SIG_EXP+=("int ft_toupper(int c)")
+SIG_FNS+=(ft_tolower);    SIG_EXP+=("int ft_tolower(int c)")
+SIG_FNS+=(ft_strchr);     SIG_EXP+=("char *ft_strchr(const char *s, int c)")
+SIG_FNS+=(ft_strrchr);    SIG_EXP+=("char *ft_strrchr(const char *s, int c)")
+SIG_FNS+=(ft_strncmp);    SIG_EXP+=("int ft_strncmp(const char *s1, const char *s2, size_t n)")
+SIG_FNS+=(ft_memchr);     SIG_EXP+=("void *ft_memchr(const void *s, int c, size_t n)")
+SIG_FNS+=(ft_memcmp);     SIG_EXP+=("int ft_memcmp(const void *s1, const void *s2, size_t n)")
+SIG_FNS+=(ft_strnstr);    SIG_EXP+=("char *ft_strnstr(const char *haystack, const char *needle, size_t len)")
+SIG_FNS+=(ft_atoi);       SIG_EXP+=("int ft_atoi(const char *nptr)")
+SIG_FNS+=(ft_calloc);     SIG_EXP+=("void *ft_calloc(size_t nmemb, size_t size)")
+SIG_FNS+=(ft_strdup);     SIG_EXP+=("char *ft_strdup(const char *s)")
+SIG_FNS+=(ft_substr);     SIG_EXP+=("char *ft_substr(char const *s, unsigned int start, size_t len)")
+SIG_FNS+=(ft_strjoin);    SIG_EXP+=("char *ft_strjoin(char const *s1, char const *s2)")
+SIG_FNS+=(ft_strtrim);    SIG_EXP+=("char *ft_strtrim(char const *s1, char const *set)")
+SIG_FNS+=(ft_split);      SIG_EXP+=("char **ft_split(char const *s, char c)")
+SIG_FNS+=(ft_itoa);       SIG_EXP+=("char *ft_itoa(int n)")
+SIG_FNS+=(ft_strmapi);    SIG_EXP+=("char *ft_strmapi(char const *s, char (*f)(unsigned int, char))")
+SIG_FNS+=(ft_striteri);   SIG_EXP+=("void ft_striteri(char *s, void (*f)(unsigned int, char*))")
+SIG_FNS+=(ft_putchar_fd); SIG_EXP+=("void ft_putchar_fd(char c, int fd)")
+SIG_FNS+=(ft_putstr_fd);  SIG_EXP+=("void ft_putstr_fd(char *s, int fd)")
+SIG_FNS+=(ft_putendl_fd); SIG_EXP+=("void ft_putendl_fd(char *s, int fd)")
+SIG_FNS+=(ft_putnbr_fd);  SIG_EXP+=("void ft_putnbr_fd(int n, int fd)")
+SIG_FNS+=(ft_lstnew);       SIG_EXP+=("t_list *ft_lstnew(void *content)")
+SIG_FNS+=(ft_lstadd_front); SIG_EXP+=("void ft_lstadd_front(t_list **lst, t_list *new)")
+SIG_FNS+=(ft_lstsize);      SIG_EXP+=("int ft_lstsize(t_list *lst)")
+SIG_FNS+=(ft_lstlast);      SIG_EXP+=("t_list *ft_lstlast(t_list *lst)")
+SIG_FNS+=(ft_lstadd_back);  SIG_EXP+=("void ft_lstadd_back(t_list **lst, t_list *new)")
+SIG_FNS+=(ft_lstdelone);    SIG_EXP+=("void ft_lstdelone(t_list *lst, void (*del)(void *))")
+SIG_FNS+=(ft_lstclear);     SIG_EXP+=("void ft_lstclear(t_list **lst, void (*del)(void *))")
+SIG_FNS+=(ft_lstiter);      SIG_EXP+=("void ft_lstiter(t_list *lst, void (*f)(void *))")
+SIG_FNS+=(ft_lstmap);       SIG_EXP+=("t_list *ft_lstmap(t_list *lst, void *(*f)(void *), void (*del)(void *))")
 
-# ── Part 2: Subject-specified prototypes ──
-echo -e "\n  ${BOLD}Part 2 — Additional functions${RESET}"
+TOTAL_SIGS=${#SIG_FNS[@]}
 
-check_sig ft_substr    "char *ft_substr(char const *s, unsigned int start, size_t len)"
-check_sig ft_strjoin   "char *ft_strjoin(char const *s1, char const *s2)"
-check_sig ft_strtrim   "char *ft_strtrim(char const *s1, char const *set)"
-check_sig ft_split     "char **ft_split(char const *s, char c)"
-check_sig ft_itoa      "char *ft_itoa(int n)"
-check_sig ft_strmapi   "char *ft_strmapi(char const *s, char (*f)(unsigned int, char))"
-check_sig ft_striteri  "void ft_striteri(char *s, void (*f)(unsigned int, char*))"
-check_sig ft_putchar_fd "void ft_putchar_fd(char c, int fd)"
-check_sig ft_putstr_fd  "void ft_putstr_fd(char *s, int fd)"
-check_sig ft_putendl_fd "void ft_putendl_fd(char *s, int fd)"
-check_sig ft_putnbr_fd  "void ft_putnbr_fd(int n, int fd)"
+echo -e "\n  Scanning ${TOTAL_SIGS} function signatures...\n"
 
-# ── Part 3: Subject-specified prototypes ──
-echo -e "\n  ${BOLD}Part 3 — Linked list functions${RESET}"
+for (( idx=0; idx<TOTAL_SIGS; idx++ )); do
+    progress_bar $(( idx + 1 )) "$TOTAL_SIGS" "${SIG_FNS[$idx]}"
+    queue_sig "${SIG_FNS[$idx]}" "${SIG_EXP[$idx]}"
+done
+echo -e "\n"   # newline after progress bar
 
-check_sig ft_lstnew      "t_list *ft_lstnew(void *content)"
-check_sig ft_lstadd_front "void ft_lstadd_front(t_list **lst, t_list *new)"
-check_sig ft_lstsize     "int ft_lstsize(t_list *lst)"
-check_sig ft_lstlast     "t_list *ft_lstlast(t_list *lst)"
-check_sig ft_lstadd_back "void ft_lstadd_back(t_list **lst, t_list *new)"
-check_sig ft_lstdelone   "void ft_lstdelone(t_list *lst, void (*del)(void *))"
-check_sig ft_lstclear    "void ft_lstclear(t_list **lst, void (*del)(void *))"
-check_sig ft_lstiter     "void ft_lstiter(t_list *lst, void (*f)(void *))"
-check_sig ft_lstmap      "t_list *ft_lstmap(t_list *lst, void *(*f)(void *), void (*del)(void *))"
+# ── Print results grouped by part ──
+print_sig_results() {
+    local label="$1"; shift
+    local fns=("$@")
+    echo -e "  ${BOLD}$label${RESET}"
+    for fn in "${fns[@]}"; do
+        for entry in "${SIG_RESULTS[@]}"; do
+            IFS='|' read -r status efn exp got <<< "$entry"
+            [ "$efn" != "$fn" ] && continue
+            case "$status" in
+                PASS) pass "$fn — signature OK" ;;
+                WARN) warn "$fn — file not found, skipping signature check" ;;
+                FAIL)
+                    fail "$fn — $([ "$got" = "NOT_FOUND" ] && echo "function definition not found in source" || echo "signature MISMATCH")"
+                    if [ "$got" != "NOT_FOUND" ]; then
+                        echo -e "      ${YELLOW}Expected:${RESET} $exp"
+                        echo -e "      ${RED}Got     :${RESET} $got"
+                    fi
+                    ;;
+            esac
+            break
+        done
+    done
+}
+
+PART1_SIG=(ft_isalpha ft_isdigit ft_isalnum ft_isascii ft_isprint
+           ft_strlen ft_memset ft_bzero ft_memcpy ft_memmove
+           ft_strlcpy ft_strlcat ft_toupper ft_tolower
+           ft_strchr ft_strrchr ft_strncmp ft_memchr ft_memcmp
+           ft_strnstr ft_atoi ft_calloc ft_strdup)
+
+PART2_SIG=(ft_substr ft_strjoin ft_strtrim ft_split ft_itoa
+           ft_strmapi ft_striteri
+           ft_putchar_fd ft_putstr_fd ft_putendl_fd ft_putnbr_fd)
+
+PART3_SIG=(ft_lstnew ft_lstadd_front ft_lstsize ft_lstlast
+           ft_lstadd_back ft_lstdelone ft_lstclear ft_lstiter ft_lstmap)
+
+print_sig_results "Part 1 — Libc functions"      "${PART1_SIG[@]}"
+echo ""
+print_sig_results "Part 2 — Additional functions" "${PART2_SIG[@]}"
+echo ""
+print_sig_results "Part 3 — Linked list functions" "${PART3_SIG[@]}"
 
 # ──────────────────────────────────────────────
 #  SUMMARY
