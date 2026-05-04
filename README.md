@@ -14,6 +14,8 @@ A **Bash script** to automatically verify the compliance of a **42 Libft project
 - **Norm Compliance**: Validates adherence to the **42 Norm** (e.g., line length, function count, and parameter limits).
 - **Relinking Issues**: Identifies potential issues with `ar -rcs` in the `Makefile`.
 - `**.PHONY` Declarations**: Checks for `.PHONY` declarations in the `Makefile` (recommended but optional).
+- It checks the function signatures against the original function signatures in Part1 and against the project description in Part2&Part3.
+  ( If the mismatch is a result of argument nameing then it can be ignored, but if it is due type mismatch then you need to fix it ! )
 
 ---
 
