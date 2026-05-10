@@ -204,24 +204,13 @@ check_function_files() {
     local funcs=("$@")
     echo -e "\n  ${BOLD}$part_label${RESET}"
     for fn in "${funcs[@]}"; do
-        if [ "$is_bonus_part" = "yes" ]; then
-            # Part 3: files must be named *_bonus.c per the subject
-            if [ -f "$REPO/${fn}_bonus.c" ]; then
-                pass "${fn}_bonus.c"
-            elif [ -f "$REPO/${fn}.c" ]; then
-                warn "${fn}_bonus.c missing, but ${fn}.c exists (subject requires _bonus suffix for Part 3)"
-            else
-                fail "${fn}_bonus.c is MISSING"
-            fi
+        if [ -f "$REPO/${fn}.c" ]; then
+            pass "${fn}.c"
         else
-            if [ -f "$REPO/${fn}.c" ]; then
-                pass "${fn}.c"
+            if [ -f "$REPO/${fn}_bonus.c" ]; then
+                warn "${fn}.c missing, but ${fn}_bonus.c exists (only counts for bonus)"
             else
-                if [ -f "$REPO/${fn}_bonus.c" ]; then
-                    warn "${fn}.c missing, but ${fn}_bonus.c exists (only counts for bonus)"
-                else
-                    fail "${fn}.c is MISSING"
-                fi
+                fail "${fn}.c is MISSING"
             fi
         fi
     done
@@ -229,7 +218,7 @@ check_function_files() {
 
 check_function_files "Part 1 — Libc functions"        "no"  "${PART1[@]}"
 check_function_files "Part 2 — Additional functions"   "no"  "${PART2[@]}"
-check_function_files "Part 3 — Linked list (bonus)"    "yes" "${PART3[@]}"
+check_function_files "Part 3 — Linked list"            "no"  "${PART3[@]}"
 
 # ──────────────────────────────────────────────
 #  SECTION 5 — Forbidden functions inside .c files
@@ -568,10 +557,7 @@ queue_sig() {
     local expected="$2"
     local src="$REPO/${fn}.c"
 
-    # Fall back to _bonus variant (Part 3 linked-list functions)
-    if [ ! -f "$src" ] && [ -f "$REPO/${fn}_bonus.c" ]; then
-        src="$REPO/${fn}_bonus.c"
-    fi
+
 
     local got
     got=$(get_definition "$src" "$fn")
